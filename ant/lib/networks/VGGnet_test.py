@@ -13,7 +13,7 @@ class VGGnet_test(Network):
         #self.im_info = tf.placeholder(tf.float32, shape=[None, 3])
         self.im_info = tf.cast(tf.zeros([1, 3]),tf.float32)
         #self.keep_prob = tf.placeholder(tf.float32)
-        self.keep_prob = tf.cast(tf.zeros((1)),tf.float32)
+        self.keep_prob = tf.cast(tf.ones((1)),tf.float32)
         self.layers = dict({'data':self.data, 'im_info':self.im_info})
         self.trainable = trainable
         self.setup()

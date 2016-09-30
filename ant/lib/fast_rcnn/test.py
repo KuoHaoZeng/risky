@@ -25,7 +25,7 @@ def bbox_transform_inv(boxes, deltas):
     heights = boxes[:, 3] - boxes[:, 1] + 1.0
     ctr_x = boxes[:, 0] + 0.5 * widths
     ctr_y = boxes[:, 1] + 0.5 * heights
-
+    """
     dx = []
     dy = []
     dw = []
@@ -35,19 +35,20 @@ def bbox_transform_inv(boxes, deltas):
 	dy.append(deltas[:, idx*4+1])
 	dw.append(deltas[:, idx*4+2])
 	dh.append(deltas[:, idx*4+3])
-    #dx = deltas[:, 0::4]
-    #dy = deltas[:, 1::4]
-    #dw = deltas[:, 2::4]
-    #dh = deltas[:, 3::4]
     dx = tf.pack(dx)
     dy = tf.pack(dy)
     dw = tf.pack(dw)
     dh = tf.pack(dh)
+    """
+    dx = deltas[:, 0::4]
+    dy = deltas[:, 1::4]
+    dw = deltas[:, 2::4]
+    dh = deltas[:, 3::4]
 
-    pred_ctr_x = dx * widths + ctr_x
-    pred_ctr_y = dy * heights + ctr_y
-    pred_w = tf.exp(dw) * widths
-    pred_h = tf.exp(dh) * heights
+    pred_ctr_x = dx * tf.expand_dims(widths,1) + tf.expand_dims(ctr_x,1)
+    pred_ctr_y = dy * tf.expand_dims(heights,1) + tf.expand_dims(ctr_y,1)
+    pred_w = tf.exp(dw) * tf.expand_dims(widths,1)
+    pred_h = tf.exp(dh) * tf.expand_dims(heights,1)
     """
     pred_boxes = np.zeros(deltas.shape, dtype=deltas.dtype)
     # x1
@@ -63,6 +64,8 @@ def bbox_transform_inv(boxes, deltas):
     y1 = pred_ctr_y - 0.5 * pred_h
     x2 = pred_ctr_x + 0.5 * pred_w
     y2 = pred_ctr_y + 0.5 * pred_h
+    #pred_boxes = tf.transpose(tf.pack([x1,y1,x2,y2]))
+    
     pred_boxes = []
     for idx in xrange(21):
 	pred_boxes.append(x1[:,idx])
@@ -70,7 +73,7 @@ def bbox_transform_inv(boxes, deltas):
 	pred_boxes.append(x2[:,idx])
 	pred_boxes.append(y2[:,idx])
     pred_boxes = tf.transpose(tf.pack(pred_boxes))
-
+    
     return pred_boxes
 
 def im_list_to_blob(ims):
@@ -105,17 +108,17 @@ def _get_image_blob(im):
     im_orig -= cfg.PIXEL_MEANS
 
     im_shape = tf.shape(im_orig)
-    im_size_min = tf.cast(tf.reduce_max(im_shape[0:2]),tf.float32)
-    im_size_max = tf.cast(tf.reduce_min(im_shape[0:2]),tf.float32)
+    im_size_min = tf.cast(tf.reduce_min(im_shape[0:2]),tf.float32)
+    im_size_max = tf.cast(tf.reduce_max(im_shape[0:2]),tf.float32)
 
     processed_ims = []
     im_scale_factors = []
 
     for target_size in cfg.TEST.SCALES:
-        im_scale = float(target_size) / tf.cast(im_size_min, tf.float32)
+        im_scale = float(target_size) / im_size_min
         # Prevent the biggest axis from being more than MAX_SIZE
         check=tf.cast(tf.greater(tf.round(im_scale * im_size_max), tf.cast(tf.constant(cfg.TEST.MAX_SIZE),tf.float32)),tf.float32)
-        im_scale = check * float(cfg.TEST.MAX_SIZE) / tf.cast(im_size_max, tf.float32) + (1-check) * float(target_size) / tf.cast(im_size_min, tf.float32)
+        im_scale = check * (float(cfg.TEST.MAX_SIZE) / im_size_max) + (1-check) * float(target_size) / im_size_min
         im = tf.image.resize_images(im_orig, tf.cast(tf.cast(im_shape[0],tf.float32)*im_scale,tf.int32), tf.cast(tf.cast(im_shape[1],tf.float32)*im_scale,tf.int32),method=0)
         im_scale_factors.append(im_scale)
         processed_ims.append(im)
@@ -207,10 +210,11 @@ def _clip_boxes(boxes, im_shape):
     #y1 = tf.maximum(boxes[:, 1::4], 0)
     #x2 = tf.minimum(boxes[:, 2::4], tf.cast(im_shape[1] - 1,tf.float32))
     #y2 = tf.minimum(boxes[:, 3::4], tf.cast(im_shape[0] - 1,tf.float32))
-    x1 = tf.pack(x1)
-    y1 = tf.pack(y1)
-    x2 = tf.pack(x2)
-    y2 = tf.pack(y2)
+    x1 = tf.transpose(tf.pack(x1))
+    y1 = tf.transpose(tf.pack(y1))
+    x2 = tf.transpose(tf.pack(x2))
+    y2 = tf.transpose(tf.pack(y2))
+
     boxes = []
     for idx in xrange(21):
 	boxes.append(x1[:,idx])
@@ -219,7 +223,6 @@ def _clip_boxes(boxes, im_shape):
 	boxes.append(y2[:,idx])
     boxes = tf.transpose(tf.pack(boxes))
     return boxes
-
 
 def _rescale_boxes(boxes, inds, scales):
     """Rescale boxes according to image rescaling."""
@@ -265,6 +268,8 @@ def im_detect(sess, net, im, boxes=None):
 	net.data = blobs['data']
 	net.im_info = blobs['im_info']
 	net.keep_prob = 1.0
+	net.layers['data'] = blobs['data']
+	net.layers['im_info'] = blobs['im_info']
     else:
         #feed_dict={net.data: blobs['data'], net.rois: blobs['rois'], net.keep_prob: 1.0}
 	net.data = blobs['data']

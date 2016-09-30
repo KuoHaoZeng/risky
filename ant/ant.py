@@ -16,7 +16,7 @@ import numpy as np
 from tf_utils import weight_variable, bias_variable, dense_to_one_hot
 
 class ant(object):
-	def __init__(self, dataset, batch_size, n_times, keep_prob = 0.9, start_time = 0):
+	def __init__(self, dataset, batch_size, n_times, keep_prob = 0.9, start_time = 0, device = [0,1,2]):
 		self.variables = []
 		self.batch_size = batch_size
 		self.start_time = start_time
@@ -25,6 +25,7 @@ class ant(object):
 		self.faster_rcnn = get_network('VGGnet_test')
 		self.model_variable()
 		self.dataset = dataset
+		self.device = device
 
 	def model_variable(self):
 		# %% We'll setup the two-layer localisation network to figure out the
@@ -113,8 +114,8 @@ class ant(object):
 		y1 = det[1]
 		x2 = det[2]
 		y2 = det[3]
-		x_tmp = tf.image.crop_to_bounding_box(x,y1,x1,y2-y1,x2-x1)
-		foreground_x += tf.image.pad_to_bounding_box(x_tmp,360-y1,640-x1,360,640)
+		x_tmp = tf.image.crop_to_bounding_box(x,x1,y1,x2-x1,y2-y1)
+		foreground_x = tf.maximum(foreground_x, tf.image.pad_to_bounding_box(x_tmp,360-y1,640-x1,360,640))
 		i+=1
 		return foreground_x, x, dets, i, inds
 
@@ -145,7 +146,8 @@ class ant(object):
 			
 			for batch in xrange(self.batch_size):
 				#[scores, boxes, pool_5] = im_detect(sess, self.faster_rcnn, x[batch,time,:,:,:])
-				[scores, boxes, pool_5] = im_detect(sess, self.faster_rcnn, x[batch,time,:,:,:])
+				with tf.device('/gpu:'+str(self.device[0])):
+					[scores, boxes, pool_5] = im_detect(sess, self.faster_rcnn, x[batch,time,:,:,:])
 				num_boxes = tf.shape(pool_5)[0]
 				batch_pool_5_1.append(tf.gather(pool_5,num_boxes-1))
 				batch_pool_5_2.append(tf.gather(pool_5,num_boxes-1))
@@ -154,8 +156,8 @@ class ant(object):
 				cls_scores = scores[:, 7]
 				#dets = tf.cast(tf.concat(1,[cls_boxes,tf.expand_dims(cls_scores,0)]),tf.float32)
 				#keep = nms(dets, NMS_THRESH)
-				cls_boxes_nms = cls_boxes/tf.constant([640.,360.,640.,360.])
-				keep = tf.image.non_max_suppression(cls_boxes_nms,cls_scores,10,iou_threshold=0.3)
+				#cls_boxes_nms = cls_boxes/tf.constant([640.,360.,640.,360.])
+				keep = tf.image.non_max_suppression(cls_boxes,cls_scores,10,iou_threshold=0.3)
         			#dets_ = dets[keep, :]
 				dets_ = tf.gather(cls_boxes, keep)
 				dets_scores = tf.gather(cls_scores, keep)
@@ -163,14 +165,13 @@ class ant(object):
 				cls_scores = scores[:, 15]
 				#dets = tf.cast(tf.concat(1,[cls_boxes,tf.expand_dims(cls_scores,0)]),tf.float32)
 				#keep = nms(dets, NMS_THRESH)
-				cls_boxes_nms = cls_boxes/tf.constant([640.,360.,640.,360.])
-				keep = tf.image.non_max_suppression(cls_boxes_nms,cls_scores,10,iou_threshold=0.3)
+				#cls_boxes_nms = cls_boxes/tf.constant([640.,360.,640.,360.])
+				keep = tf.image.non_max_suppression(cls_boxes,cls_scores,10,iou_threshold=0.3)
         			#dets_ += dets[keep, :]
 				#dets_ = tf.concat(0,[dets_, tf.gather(dets, keep)])
-				tf.gather(cls_boxes, keep)
 				dets_ = tf.concat(0, [dets_, tf.gather(cls_boxes, keep)])
 				dets_scores = tf.concat(0, [dets_scores, tf.gather(cls_scores, keep)])
-				inds = tf.cast(tf.where(tf.greater_equal(dets_scores, 0.5))[:,0], tf.float32)
+				inds = tf.where(tf.greater_equal(dets_scores, 0.5))[:,0]
 
 				foreground_x = tf.zeros((tf.shape(x)[2:]))
 				x_org = tf.gather(tf.gather(x,batch),time)
@@ -180,14 +181,18 @@ class ant(object):
 				#	x_tmp = tf.image.crop_to_bounding_box(x[batch,time,:,:,:],dets[i,1],dets[i,0],dets[i,3]-dets[i,1],dets[i,2]-dets[i,0])
 				#	foreground_x += tf.image.pad_to_bounding_box(x_tmp,360-dets[i,1],640-dets[i,0],360,640)
 				background_x = x[batch,time,:,:,:] - foreground_x
-				[_,_,batch_pool_5_1_tmp] = im_detect(sess, self.faster_rcnn, background_x)
-				batch_pool_5_1.append(batch_pool_5_1_tmp)
+				with tf.device('/gpu:'+str(self.device[0])):
+					[_,_,batch_pool_5_1_tmp] = im_detect(sess, self.faster_rcnn, background_x)
+				num_boxes = tf.shape(batch_pool_5_1_tmp)[0]
+				batch_pool_5_1.append(tf.gather(batch_pool_5_1_tmp,num_boxes-1))
 				#idx = tf.gather(dets,tf.argmax(dets[:,-1],0))
 				#x_tmp = tf.image.crop_to_bounding_box(x[batch,time,:,:,:],idx[1],idx[0],idx[3]-idx[1],idx[2]-idx[0])
 				#foreground_x = tf.image.pad_to_bounding_box(x_tmp,360-idx[1],640-idx[0],360,640)
 				obj_x.append(foreground_x)
-				[_,_,batch_pool_5_2_tmp] = im_detect(sess, self.faster_rcnn, foreground_x)
-				batch_pool_5_2.append(batch_pool_5_2_tmp)
+				with tf.device('/gpu:'+str(self.device[0])):
+					[_,_,batch_pool_5_2_tmp] = im_detect(sess, self.faster_rcnn, foreground_x)
+				num_boxes = tf.shape(batch_pool_5_2_tmp)[0]
+				batch_pool_5_2.append(tf.gather(batch_pool_5_2_tmp,num_boxes-1))
 				"""
 			
 			obj_x = tf.pack(obj_x)
@@ -254,9 +259,9 @@ class ant(object):
 			cross_entropy.append(tf.reduce_mean(
 		    		tf.nn.softmax_cross_entropy_with_logits(y_logits, y_target)))
 
-		cross_entropy = tf.reduce_mean(cross_entropy)
+		cross_entropy = tf.reduce_mean(tf.pack(cross_entropy))
 		# %% Monitor accuracy
 		correct_prediction = tf.equal(tf.cast(tf.argmax(y_logits, 1),tf.int32), y[:,self.n_times-self.start_time-1])
 		accuracy = tf.reduce_mean(tf.cast(correct_prediction, 'float'))
 
-		return x, y, cross_entropy, accuracy
+		return x, y, cross_entropy, accuracy, pool_5, boxes, scores
