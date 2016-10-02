@@ -128,9 +128,7 @@ def proposal_layer(rpn_cls_prob_reshape,rpn_bbox_pred,im_info,_feat_stride = [16
     if post_nms_topN > 0:
         keep = keep[:post_nms_topN]
     proposals = proposals[keep, :]
-    proposals = np.vstack((proposals,[0,0,im_info[0], im_info[1]]))
     scores = scores[keep]
-    scores = np.vstack((scores,0))
     # Output rois blob
     # Our RPN implementation only supports a single input image, so all
     # batch inds are 0

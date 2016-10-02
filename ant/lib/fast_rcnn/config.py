@@ -187,7 +187,9 @@ __C.TEST.RPN_POST_NMS_TOP_N = 300
 # Proposal height and width both need to be greater than RPN_MIN_SIZE (at orig image scale)
 __C.TEST.RPN_MIN_SIZE = 16
 
-
+# Scales to compute real features
+#__C.TEST.SCALES_BASE = (0.25, 0.5, 1.0, 2.0, 3.0)
+__C.TEST.SCALES_BASE = (1.0,)
 #
 # MISC
 #

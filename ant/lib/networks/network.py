@@ -94,6 +94,9 @@ class Network(object):
     def make_var(self, name, shape, initializer=None, trainable=True):
         return tf.get_variable(name, shape, initializer=initializer, trainable=trainable)
 
+    def assign_var(self, name, var):
+        return tf.Variable(var, name)
+
     def validate_padding(self, padding):
         assert padding in ('SAME', 'VALID')
 
@@ -120,8 +123,8 @@ class Network(object):
 
             init_weights = tf.truncated_normal_initializer(0.0, stddev=0.01)
             init_biases = tf.constant_initializer(0.0)
-            kernel = self.make_var('weights', [k_h, k_w, c_i/group, c_o], init_weights, trainable)
-            biases = self.make_var('biases', [c_o], init_biases, trainable)
+	    kernel = self.make_var('weights', [k_h, k_w, c_i/group, c_o], init_weights, trainable)
+	    biases = self.make_var('biases', [c_o], init_biases, trainable)
 
             #kernel = tf.Variable(tf.transpose(all_layer[name]['weights'],[2,3,1,0]),name = 'weights')
             #biases = tf.Variable(all_layer[name]['biases'],name = 'biases')
@@ -282,10 +285,10 @@ class Network(object):
             '''
             #weights = tf.Variable(tf.transpose(all_layer[name]['weights'],[1,0]),name = 'weights')
             #biases = tf.Variable(all_layer[name]['biases'],name = 'biases')
-            init_weights = tf.truncated_normal_initializer(0.0, stddev=0.01)
-            init_biases = tf.constant_initializer(0.0)
-            weights = self.make_var('weights', [dim, num_out], init_weights, trainable)
-            biases = self.make_var('biases', [num_out], init_biases, trainable)
+	    init_weights = tf.truncated_normal_initializer(0.0, stddev=0.01)
+	    init_biases = tf.constant_initializer(0.0)
+	    weights = self.make_var('weights', [dim, num_out], init_weights, trainable)
+	    biases = self.make_var('biases', [num_out], init_biases, trainable)
 
             op = tf.nn.relu_layer if relu else tf.nn.xw_plus_b
             fc = op(feed_in, weights, biases, name=scope.name)
