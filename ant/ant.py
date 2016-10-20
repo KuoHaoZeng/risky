@@ -245,9 +245,9 @@ class ant(object):
 			if time > 0:
                 		tf.get_variable_scope().reuse_variables()
 		
+			envir_x = []
+			agent_x = []
 			with tf.device('/gpu:'+str(self.device[1])):
-				envir_x = []
-				agent_x = []
 				for batch in xrange(self.batch_size):
 					#self.faster_rcnn.layers['data'] = tf.expand_dims(rpn[batch, time, :, :, :],0)
 					#self.faster_rcnn.layers['im_info'] = rpn_info
@@ -257,10 +257,11 @@ class ant(object):
 					#bbox_pred = self.faster_rcnn.get_output('bbox_pred')
 					#rois = self.faster_rcnn.get_output('rois')
 					#pool_5 = self.faster_rcnn.get_output('pool_5')
-					pool_5 = self.faster_rcnn.run(tf.expand_dims(rpn[batch, time, :, :, :],0), rpn_info)
-					num_boxes = tf.shape(pool_5)[0]
-					pool_5_agent = tf.gather(pool_5, num_boxes-1)
-					agent_x.append(pool_5_agent)
+					with tf.device('/gpu:'+str(self.device[0])):
+						[pool_5, _] = self.faster_rcnn.run(tf.expand_dims(rpn[batch, time, :, :, :],0), rpn_info)
+						num_boxes = tf.shape(pool_5)[0]
+						pool_5_agent = tf.gather(pool_5, num_boxes-1)
+						agent_x.append(pool_5_agent)
 					"""
         				boxes = rois[:, 1:5] / im_scales[0]
 

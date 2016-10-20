@@ -12,7 +12,7 @@ DEFAULT_PADDING = 'SAME'
 class faster_rcnn_tf(object):
 	def __init__(self, model_dir, dropout_rate):
 		self.model_dir = model_dir
-		self.anchor_scales = [8, 16, 32]
+		self.anchor_scales = [4, 8, 16, 32]
 		self._feat_stride = [16,]
 		self.dropout_rate = dropout_rate
 		self.load_model()
@@ -61,7 +61,20 @@ class faster_rcnn_tf(object):
 		self.W_cls_score = tf.Variable(model['cls_score']['weights'])
 		self.b_cls_score = tf.Variable(model['cls_score']['biases'])
 
-	def run(self, data, im_info):
+	def extract(self):
+		data = tf.placeholder(tf.float32, [None, 562, 1000, 3])
+		im_info = tf.placeholder(tf.float32, [None,3])
+		[pool_5, fc7, rois, bbox_pred, cls_prob, cls_score] = self.run(data, im_info)
+		return data, im_info, pool_5, fc7, rois, bbox_pred, cls_prob, cls_score
+
+	def extract_gt(self):
+		data = tf.placeholder(tf.float32, [None, 562, 1000, 3])
+		im_info = tf.placeholder(tf.float32, [None,3])
+		gt_boxes = tf.placeholder(tf.float32, shape=[None, 5])
+		[pool_5, fc7, rois, bbox_pred, cls_prob, cls_score] = self.run(data, im_info, gt_boxes)
+		return data, im_info, gt_boxes, pool_5, fc7, rois, bbox_pred, cls_prob, cls_score
+
+	def run(self, data, im_info, gt_boxes=None):
 		h1_1 = tf.nn.relu(tf.nn.conv2d(input=data,filter=self.W_conv1_1,strides=[1, 1, 1, 1],padding='SAME', name='conv1_1') + self.b_conv1_1)
 		h1_2 = tf.nn.relu(tf.nn.conv2d(input=h1_1,filter=self.W_conv1_2,strides=[1, 1, 1, 1],padding='SAME', name='conv1_2') + self.b_conv1_2)
 		h1_max = self.max_pool(h1_2, 2, 2, 2, 2, padding='VALID', name='pool1')
@@ -84,12 +97,15 @@ class faster_rcnn_tf(object):
 		h_rpn_cls_score = tf.nn.conv2d(input=h_rpn,filter=self.W_rpn_cls_score,strides=[1, 1, 1, 1],padding='VALID', name='rpn_cls_score') + self.b_rpn_cls_score
 		h_rpn_bbox_pred = tf.nn.conv2d(input=h_rpn,filter=self.W_rpn_bbox_pred,strides=[1, 1, 1, 1],padding='VALID', name='rpn_bbox_pred') + self.b_rpn_bbox_pred
 		h_rpn_cls_score_reshape = self.reshape_layer(h_rpn_cls_score, 2, name='rpn_cls_score_reshape')
-		pdb.set_trace()
 		h_rpn_cls_prob = self.softmax(h_rpn_cls_score_reshape, name='rpn_cls_prob')
 		h_rpn_cls_prob_reshape = self.reshape_layer(h_rpn_cls_prob, len(self.anchor_scales)*3*2, name='rpn_cls_prob_reshape')
 
 		rois = self.proposal_layer([h_rpn_cls_prob_reshape,h_rpn_bbox_pred,im_info],self._feat_stride, self.anchor_scales, name = 'rois')
-		pool_5 = self.roi_pool([h5_3, rois], 7, 7, 1.0/16, name='pool_5')
+		if gt_boxes == None:
+			pool_5 = self.roi_pool([h5_3, rois], 7, 7, 1.0/16, name='pool_5')
+		else:
+			rois_with_gt = self.proposal_target_layer([rois,gt_boxes],6,name='rois_with_gt')
+			pool_5 = self.roi_pool([h5_3, rois_with_gt], 7, 7, 1.0/16, name='pool_5')
 
 		fc6 = tf.nn.relu_layer(tf.reshape(tf.transpose(pool_5,[0,3,1,2]), [-1, 7*7*512]), self.W_fc6, self.b_fc6, name='fc6')
 		fc6_drop = self.dropout(fc6, self.dropout_rate, name='drop6')
@@ -98,8 +114,11 @@ class faster_rcnn_tf(object):
 		cls_score = tf.nn.relu_layer(fc7_drop, self.W_cls_score, self.b_cls_score, name='cls_score')
 		cls_prob = self.softmax(cls_score, name='cls_prob')
 		bbox_pred = tf.nn.relu_layer(fc7_drop, self.W_bbox_pred, self.b_bbox_pred, name='bbox_pred')
-		
-		return pool_5
+	
+		if gt_boxes == None:	
+			return pool_5, fc7, rois, bbox_pred, cls_prob, cls_score
+		else:
+			return pool_5, fc7, rois_with_gt, bbox_pred, cls_prob, cls_score
 	
 	def validate_padding(self, padding):
         	assert padding in ('SAME', 'VALID')

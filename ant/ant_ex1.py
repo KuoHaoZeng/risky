@@ -69,6 +69,7 @@ class trainer(object):
 				#print('         	Time for using getting scale information:' + str(time.time() - time_b))
 				if anno != None:
 					gt_boxes_time = []
+					label_idx = 0
 					for k, v in anno[batch_idx].items():
 						ratio_h = ds.label[vid[batch_idx]]['size'][0] / float(blob_shape[2])
 						ratio_w = ds.label[vid[batch_idx]]['size'][1] / float(blob_shape[3])
@@ -78,7 +79,8 @@ class trainer(object):
 								boxes.append(v['bbox'][time_idx][iii] / ratio_w)
 							else:
 								boxes.append(v['bbox'][time_idx][iii] / ratio_h)
-						gt_boxes_time.append(boxes+[0])
+						gt_boxes_time.append(boxes+[label_idx])
+						label_idx += 1
 					if len(gt_boxes_time) == 0:
 						gt_boxes_time.append([0,0,0,0,0])
 						gt_boxes_time.append([0,0,0,0,0])
@@ -112,7 +114,7 @@ class trainer(object):
 			[data, im_info, pool_5_tf, fc7_tf, rois_tf, bbox_pred_tf, cls_prob_tf, cls_score_tf] = self.model.faster_rcnn.extract()
 		sess.run(tf.initialize_all_variables())
 		self.dataset.split = 'train'
-		for iter_i in range(int(iter_per_epoch/4)):
+		for iter_i in range(int(iter_per_epoch*0.25),int(iter_per_epoch*0.5)):
 			time_a = time.time()
 			[batch_xs, batch_ys, batch_anno, vid] = self.dataset.get_data(iter_i)
 			#[batch_xs, batch_ys, batch_anno] = self.dataset.get_data_q()
@@ -129,16 +131,19 @@ class trainer(object):
 			scores_batch = []
 			pred_boxes_batch = []
 			fc7_batch = []
+			agent_label_batch = []
 			#pool_5_batch = []
 			for batch_idx in xrange(batch_rpn.shape[0]):
 				boxes_time = []
 				scores_time = []
 				pred_boxes_time = []
 				fc7_time = []
+				agent_label_time = []
 				#pool_5_time = []
 				for time_idx in xrange(batch_rpn.shape[1]):
 					if is_gt:
 						[pool_5, fc7, rois, bbox_pred, cls_prob, cls_score] = sess.run([pool_5_tf, fc7_tf, rois_tf, bbox_pred_tf, cls_prob_tf, cls_score_tf], feed_dict={data: np.expand_dims(batch_rpn[batch_idx,time_idx,:,:,:],0), im_info:batch_rpn_info, gt_boxes:batch_gt_boxes[batch_idx][time_idx]})
+						agent_label_time.append(rois[1])
 						rois = rois[0]
 					else:
 						[pool_5, fc7, rois, bbox_pred, cls_prob, cls_score] = sess.run([pool_5_tf, fc7_tf, rois_tf, bbox_pred_tf, cls_prob_tf, cls_score_tf], feed_dict={data: np.expand_dims(batch_rpn[batch_idx,time_idx,:,:,:],0), im_info:batch_rpn_info})
@@ -156,12 +161,9 @@ class trainer(object):
 				scores_batch.append(scores_time)
 				pred_boxes_batch.append(pred_boxes_time)
 				fc7_batch.append(fc7_time)
+				agent_label_batch.append(agent_label_time)
 				#pool_5_batch.append(pool_5_time)
-			boxes_batch = np.array(boxes_batch)
-			scores_batch = np.array(scores_batch)
-			pred_boxes_batch = np.array(pred_boxes_batch)
-			fc7_batch = np.array(fc7_batch)
-			np.savez('/home/Hao/tik/risky/ant/data/dashcam/feature/train_gt/'+self.dataset.train_batch[iter_i].split('/')[-1],fc7=fc7_batch,boxes=boxes_batch,scores=scores_batch,pred_boxes=pred_boxes_batch)
+			np.savez('/home/Hao/tik/risky/ant/data/dashcam/feature/train_gt/'+self.dataset.train_batch[iter_i].split('/')[-1],fc7=fc7_batch,boxes=boxes_batch,scores=scores_batch,pred_boxes=pred_boxes_batch, agent = agent_label_batch)
 			print('Time for feedforwarding:' + str(time.time() - time_a))
 
 	def train(self):
