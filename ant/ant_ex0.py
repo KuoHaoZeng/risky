@@ -117,13 +117,13 @@ class trainer(object):
 		for iter_i in range(int(iter_per_epoch*0),int(iter_per_epoch*0.25)):
 			time_a = time.time()
 			[batch_xs, batch_ys, batch_anno, vid] = self.dataset.get_data(iter_i)
-			#[batch_xs, batch_ys, batch_anno] = self.dataset.get_data_q()
+			[ _, _, _, size] = self.dataset.get_data_label(iter_i)
 			print('Time for loading data:' + str(time.time() - time_a))
 			time_a = time.time()
 			if is_gt:
 				[batch_rpn, batch_rpn_scales, batch_rpn_info, batch_gt_boxes] = self.get_rpn_input(batch_xs, anno=batch_anno, vid=vid)
 			else:
-				[batch_rpn, batch_rpn_scales, batch_rpn_info, batch_gt_boxes] = self.get_rpn_input(batch_xs)
+				[batch_rpn, batch_rpn_scales, batch_rpn_info] = self.get_rpn_input(batch_xs)
 			print('Time for preprocessing data:' + str(time.time() - time_a))
 
 			time_a = time.time()
@@ -132,15 +132,26 @@ class trainer(object):
 			pred_boxes_batch = []
 			fc7_batch = []
 			agent_label_batch = []
-			#pool_5_batch = []
+			ov_5_batch = []
+			ov_6_batch = []
+			ov_7_batch = []
 			for batch_idx in xrange(batch_rpn.shape[0]):
 				boxes_time = []
 				scores_time = []
 				pred_boxes_time = []
 				fc7_time = []
 				agent_label_time = []
-				#pool_5_time = []
 				for time_idx in xrange(batch_rpn.shape[1]):
+					anno_boxes = []
+					for v in batch_anno[batch_idx].values():
+						tmp = v['bbox'][time_idx]
+						tmp[0] *= (640. / size[batch_idx,1])
+						tmp[1] *= (360. / size[batch_idx,0])
+						tmp[2] *= (640. / size[batch_idx,1])
+						tmp[3] *= (360. / size[batch_idx,0])
+						anno_boxes.append(tmp)
+					anno_boxes = np.array(anno_boxes)
+
 					if is_gt:
 						[pool_5, fc7, rois, bbox_pred, cls_prob, cls_score] = sess.run([pool_5_tf, fc7_tf, rois_tf, bbox_pred_tf, cls_prob_tf, cls_score_tf], feed_dict={data: np.expand_dims(batch_rpn[batch_idx,time_idx,:,:,:],0), im_info:batch_rpn_info, gt_boxes:batch_gt_boxes[batch_idx][time_idx]})
 						agent_label_time.append(rois[1])
@@ -148,23 +159,49 @@ class trainer(object):
 					else:
 						[pool_5, fc7, rois, bbox_pred, cls_prob, cls_score] = sess.run([pool_5_tf, fc7_tf, rois_tf, bbox_pred_tf, cls_prob_tf, cls_score_tf], feed_dict={data: np.expand_dims(batch_rpn[batch_idx,time_idx,:,:,:],0), im_info:batch_rpn_info})
 					boxes = rois[:, 1:5] / batch_rpn_scales[batch_idx,time_idx]
-					scores = cls_prob
+					if boxes.shape[0] < 100:
+						pdb.set_trace()
+
 					box_deltas = bbox_pred
 					pred_boxes = bbox_transform_inv(boxes, box_deltas)
 					pred_boxes = fast_rcnn.test._clip_boxes(pred_boxes, batch_rpn.shape[2:])
+					pred_boxes.shape = -1, 4
+
+					if len(anno_boxes) > 0:
+						ov_5 = 0.
+						ov_6 = 0.
+						ov_7 = 0.
+						for boxes_anno_gt in anno_boxes:
+							#ov = np.hstack((ov,np.where(np.array(self.dataset.IOUs(boxes_anno_gt, pred_boxes)) > 0.8)[0]))
+							#ov = np.unique(ov)
+							#ov.append(np.where(np.array(self.dataset.IOUs(boxes_anno_gt, boxes)) > 0.5)[0])
+							if len(np.where(np.array(self.dataset.IOUs(boxes_anno_gt, boxes)) > 0.5)[0]) > 0:
+								ov_5 += 1
+							if len(np.where(np.array(self.dataset.IOUs(boxes_anno_gt, boxes)) > 0.6)[0]) > 0:
+								ov_6 += 1
+							if len(np.where(np.array(self.dataset.IOUs(boxes_anno_gt, boxes)) > 0.7)[0]) > 0:
+								ov_7 += 1
+						ov_5_batch += [ov_5/len(anno_boxes)]
+						ov_6_batch += [ov_6/len(anno_boxes)]
+						ov_7_batch += [ov_7/len(anno_boxes)]
+					scores = cls_prob
+					fc7 = fc7
 					boxes_time.append(boxes)
 					scores_time.append(scores)
 					pred_boxes_time.append(pred_boxes)
 					fc7_time.append(fc7)
-					#pool_5_time.append(pool_5)
 				boxes_batch.append(boxes_time)
 				scores_batch.append(scores_time)
 				pred_boxes_batch.append(pred_boxes_time)
 				fc7_batch.append(fc7_time)
-				agent_label_batch.append(agent_label_time)
-				#pool_5_batch.append(pool_5_time)
-			np.savez('/home/Hao/tik/risky/ant/data/dashcam/feature/train_gt/'+self.dataset.train_batch[iter_i].split('/')[-1],fc7=fc7_batch,boxes=boxes_batch,scores=scores_batch,pred_boxes=pred_boxes_batch, agent = agent_label_batch)
+				if is_gt:
+					agent_label_batch.append(agent_label_time)
+			if is_gt:
+				np.savez('data/dashcam/feature/train_gt/'+self.dataset.train_batch[iter_i].split('/')[-1],fc7=fc7_batch,boxes=boxes_batch,scores=scores_batch,pred_boxes=pred_boxes_batch, agent = agent_label_batch)
+			else:
+				np.savez('data/dashcam/feature/train/'+self.dataset.train_batch[iter_i].split('/')[-1],fc7=fc7_batch,boxes=boxes_batch,scores=scores_batch,pred_boxes=pred_boxes_batch,ov_5 = ov_5_batch, ov_6 = ov_6_batch, ov_7 = ov_7_batch)
 			print('Time for feedforwarding:' + str(time.time() - time_a))
+		pdb.set_trace()
 
 	def train(self):
 		sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
@@ -237,5 +274,5 @@ if __name__ == "__main__":
 	train = trainer(model, ds, 1, 'dashcam_model.npy', device = [0,1,2,3])
 	with tf.device('/gpu:'+str(0)):
 		#train.train()
-		train.extract_feature(True)
-		#train.extract_feature()
+		#train.extract_feature(True)
+		train.extract_feature()

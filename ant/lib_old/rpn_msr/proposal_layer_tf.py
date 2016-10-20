@@ -124,12 +124,14 @@ def proposal_layer(rpn_cls_prob_reshape,rpn_bbox_pred,im_info,_feat_stride = [16
     # 6. apply nms (e.g. threshold = 0.7)
     # 7. take after_nms_topN (e.g. 300)
     # 8. return the top proposals (-> RoIs top)
+    """
     keep = nms(np.hstack((proposals, scores)), nms_thresh)
     if post_nms_topN > 0:
         keep = keep[:post_nms_topN]
     proposals = proposals[keep, :]
     #proposals = np.vstack((proposals,[0,0,im_info[0], im_info[1]]))
     scores = scores[keep]
+    """
     #scores = np.vstack((scores,0))
     # Output rois blob
     # Our RPN implementation only supports a single input image, so all
